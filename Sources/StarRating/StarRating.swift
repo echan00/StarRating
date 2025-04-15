@@ -183,11 +183,11 @@ public struct StarRating: View {
                 HStack(spacing: configuration.spacing) {
                     ForEach((0 ..< configuration.numberOfStars), id: \.self) { index in
                         starFilling
-                            .mask(Rectangle().size(width: maskWidth, height: geo.size.height))
+                            .mask(Rectangle().frame(width: maskWidth, height: geo.size.height))
                             .overlay(starBorder)
                     }
                 }
-                .mask(Rectangle().size(width: maskWidth, height: geo.size.height))
+                .mask(Rectangle().frame(width: maskWidth, height: geo.size.height))
             }
             .padding(.horizontal, horizontalPadding)
             .contentShape(Rectangle()) // Important for proper hit testing
