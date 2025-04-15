@@ -82,38 +82,22 @@ public struct StarRating: View {
         .aspectRatio(contentMode: .fit)
     }
     
-    private func updateRatingIfNeeded(width: CGFloat, marginSize: CGFloat, xLocation: CGFloat) {
+    private func updateRatingFromLocation(width: CGFloat, xLocation: CGFloat) {
         guard let onRatingChanged = onRatingChanged else { return }
         
-        let widthWithoutMargin = width - marginSize * 2
-        let numberOfSpaces = CGFloat(configuration.numberOfStars - 1)
-        let starWidth = (widthWithoutMargin - configuration.spacing * numberOfSpaces) / CGFloat(configuration.numberOfStars)
+        // Calculate the width of each star including spacing
+        let starWidth = width / CGFloat(configuration.numberOfStars)
         
-        guard starWidth > 0 else { return }
+        // Calculate the rating based on the x location
+        let rawRating = (xLocation / width) * CGFloat(configuration.numberOfStars)
+        let cappedRating = max(min(rawRating, CGFloat(configuration.numberOfStars)), 0)
         
-        var newRating: CGFloat?
-        var minLoc = marginSize
-        var idx = 0
-        repeat {
-            let lowBound = CGFloat(idx)
-            let loc = xLocation - minLoc
-            if loc <= starWidth {
-                let percentOfStar = max(loc, 0) / starWidth
-                newRating = lowBound + percentOfStar
-            } else {
-                minLoc += starWidth + configuration.spacing
-                idx += 1
-                
-                if idx >= configuration.numberOfStars {
-                    newRating = CGFloat(configuration.numberOfStars)
-                }
-            }
-        } while (newRating == nil)
-        
-        let normalizedRating = Self.normalizedRating(rating: Double(newRating!),
-                                                     minRating: configuration.minRating,
-                                                     numberOfStars: configuration.numberOfStars,
-                                                     stepType: configuration.stepType)
+        let normalizedRating = Self.normalizedRating(
+            rating: Double(cappedRating),
+            minRating: configuration.minRating,
+            numberOfStars: configuration.numberOfStars,
+            stepType: configuration.stepType
+        )
         
         if normalizedRating != rating {
             rating = normalizedRating
@@ -121,51 +105,51 @@ public struct StarRating: View {
         }
     }
     
-    private func ratingWidth(fullWidth: CGFloat, horizontalPadding: CGFloat) -> CGFloat {
-        let widthWithoutMargin = fullWidth - horizontalPadding * 2
-        let numberOfSpaces = CGFloat(configuration.numberOfStars - 1)
-        let starWidth = (widthWithoutMargin - configuration.spacing * numberOfSpaces) / CGFloat(configuration.numberOfStars)
-        
-        return CGFloat(rating) * starWidth + floor(CGFloat(rating)) * configuration.spacing
+    private func ratingWidth(fullWidth: CGFloat) -> CGFloat {
+        return (CGFloat(rating) / CGFloat(configuration.numberOfStars)) * fullWidth
     }
     
     public var body: some View {
         GeometryReader { geo in
-            let horizontalPadding = geo.size.width / CGFloat(configuration.numberOfStars * 2 + 2)
+            let maskWidth = ratingWidth(fullWidth: geo.size.width)
             
-            let maskWidth = ratingWidth(fullWidth:geo.size.width,
-                                        horizontalPadding: horizontalPadding)
-            
-            let drag = DragGesture(minimumDistance: 0).onChanged { value in
-                updateRatingIfNeeded(width: geo.size.width,
-                                     marginSize: horizontalPadding,
-                                     xLocation: value.location.x)
-            }
-            
-            ZStack {
+            ZStack(alignment: .leading) {
+                // Background stars (empty)
                 HStack(spacing: configuration.spacing) {
-                    ForEach((0 ..< configuration.numberOfStars), id: \.self) { index in
-                        
-                        starBorder
-                            .shadow(color: configuration.shadowColor, radius: configuration.shadowRadius)
-                            .background(starBackground)
+                    ForEach((0..<configuration.numberOfStars), id: \.self) { _ in
+                        ZStack {
+                            starBackground
+                            starBorder
+                                .shadow(color: configuration.shadowColor, radius: configuration.shadowRadius)
+                        }
                     }
                 }
                 
+                // Filled stars (partial filling based on rating)
                 HStack(spacing: configuration.spacing) {
-                    ForEach((0 ..< configuration.numberOfStars), id: \.self) { index in
-                        
+                    ForEach((0..<configuration.numberOfStars), id: \.self) { _ in
                         starFilling
-                            .mask(Rectangle().size(width: maskWidth, height: geo.size.height))
                             .overlay(starBorder)
                     }
                 }
-                .mask(Rectangle().size(width: maskWidth, height: geo.size.height))
+                .frame(width: geo.size.width, alignment: .leading)
+                .mask(
+                    Rectangle()
+                        .frame(width: maskWidth, height: geo.size.height)
+                )
             }
-            .padding(.horizontal, horizontalPadding)
             .contentShape(Rectangle())
-            .gesture(drag)
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        updateRatingFromLocation(
+                            width: geo.size.width,
+                            xLocation: value.location.x
+                        )
+                    }
+            )
         }
+        .frame(height: 44) // Provide a reasonable default height for better hit testing
     }
 }
 
