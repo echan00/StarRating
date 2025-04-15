@@ -82,103 +82,119 @@ public struct StarRating: View {
         .aspectRatio(contentMode: .fit)
     }
     
-    private func updateRatingIfNeeded(width: CGFloat, xLocation: CGFloat) {
+    private func updateRatingIfNeeded(width: CGFloat, marginSize: CGFloat, xLocation: CGFloat) {
         guard let onRatingChanged = onRatingChanged else { return }
         
-        // Calculate the available space for stars (accounting for spacing)
+        // Calculate the available width for stars
+        let widthWithoutMargin = width - marginSize * 2
         let numberOfSpaces = CGFloat(configuration.numberOfStars - 1)
-        let totalSpacingWidth = configuration.spacing * numberOfSpaces
-        let availableStarWidth = width - totalSpacingWidth
+        let starWidth = (widthWithoutMargin - configuration.spacing * numberOfSpaces) / CGFloat(configuration.numberOfStars)
         
-        // Calculate individual star width
-        let starWidth = availableStarWidth / CGFloat(configuration.numberOfStars)
+        guard starWidth > 0 else { return }
         
-        // Determine which star was tapped and the percentage within that star
-        var starIndex = 0
-        var remainingX = xLocation
+        // Calculate which star was tapped and what portion of it was tapped
+        // First, adjust xLocation to account for the horizontal padding
+        let adjustedX = xLocation - marginSize
         
-        // Find which star was tapped
-        while remainingX > starWidth && starIndex < configuration.numberOfStars - 1 {
-            remainingX -= (starWidth + configuration.spacing)
-            starIndex += 1
+        // If tap is outside the valid area, clamp to valid range
+        if adjustedX <= 0 {
+            // Tapped to the left of the first star
+            if rating != configuration.minRating {
+                rating = configuration.minRating
+                onRatingChanged(rating)
+            }
+            return
+        } else if adjustedX >= widthWithoutMargin {
+            // Tapped to the right of the last star
+            let maxRating = Double(configuration.numberOfStars)
+            if rating != maxRating {
+                rating = maxRating
+                onRatingChanged(rating)
+            }
+            return
         }
         
-        // Calculate rating based on the position within the star
-        let percentOfStar = min(max(remainingX / starWidth, 0), 1)
-        let newRating = Double(starIndex) + Double(percentOfStar)
+        // Calculate which star was tapped
+        let starAndSpaceWidth = starWidth + configuration.spacing
+        let starIndex = Int(adjustedX / starAndSpaceWidth)
+        let remainingX = adjustedX - (CGFloat(starIndex) * starAndSpaceWidth)
         
-        // Normalize the rating according to configuration
-        let normalizedRating = Self.normalizedRating(
-            rating: newRating,
-            minRating: configuration.minRating,
-            numberOfStars: configuration.numberOfStars,
-            stepType: configuration.stepType
-        )
-        
-        // Only update if the rating changed
-        if normalizedRating != rating {
-            rating = normalizedRating
-            onRatingChanged(rating)
+        // If the tap is in the spacing between stars, determine which star it's closer to
+        if remainingX > starWidth {
+            // Tapped in the spacing after this star, so count it as the next star
+            let newRatingValue = Double(starIndex + 1)
+            if rating != newRatingValue {
+                rating = newRatingValue
+                onRatingChanged(rating)
+            }
+        } else {
+            // Tapped within the star, calculate partial rating
+            let percentOfStar = remainingX / starWidth
+            let newRatingValue = Double(starIndex) + Double(percentOfStar)
+            
+            // Normalize the rating according to step type
+            let normalizedRating = Self.normalizedRating(
+                rating: newRatingValue,
+                minRating: configuration.minRating,
+                numberOfStars: configuration.numberOfStars,
+                stepType: configuration.stepType
+            )
+            
+            if rating != normalizedRating {
+                rating = normalizedRating
+                onRatingChanged(rating)
+            }
         }
     }
     
-    private func ratingWidth(fullWidth: CGFloat) -> CGFloat {
-        // Calculate total width excluding spacing
+    private func ratingWidth(fullWidth: CGFloat, horizontalPadding: CGFloat) -> CGFloat {
+        let widthWithoutMargin = fullWidth - horizontalPadding * 2
         let numberOfSpaces = CGFloat(configuration.numberOfStars - 1)
-        let totalSpacingWidth = configuration.spacing * numberOfSpaces
-        let availableStarWidth = fullWidth - totalSpacingWidth
+        let starWidth = (widthWithoutMargin - configuration.spacing * numberOfSpaces) / CGFloat(configuration.numberOfStars)
         
-        // Calculate width of a single star
-        let starWidth = availableStarWidth / CGFloat(configuration.numberOfStars)
-        
-        // Calculate total width for the current rating
-        let fullStars = floor(CGFloat(rating))
-        let partialStar = CGFloat(rating) - fullStars
-        
-        // Width is: (full stars * (star width + spacing)) + (partial star * star width)
-        return (fullStars * (starWidth + configuration.spacing)) + (partialStar * starWidth)
+        return CGFloat(rating) * starWidth + floor(CGFloat(rating)) * configuration.spacing
     }
     
     public var body: some View {
         GeometryReader { geo in
-            let maskWidth = ratingWidth(fullWidth: geo.size.width)
+            let horizontalPadding = geo.size.width / CGFloat(configuration.numberOfStars * 2 + 2)
             
-            ZStack(alignment: .leading) {
-                // Background stars (empty)
+            let maskWidth = ratingWidth(fullWidth:geo.size.width,
+                                        horizontalPadding: horizontalPadding)
+            
+            // A drag gesture with zero minimum distance functions as both a tap and drag
+            let dragAndTap = DragGesture(minimumDistance: 0).onChanged { value in
+                updateRatingIfNeeded(width: geo.size.width,
+                                     marginSize: horizontalPadding,
+                                     xLocation: value.location.x)
+            }
+            
+            ZStack {
+                // Background layer with empty stars
                 HStack(spacing: configuration.spacing) {
-                    ForEach((0..<configuration.numberOfStars), id: \.self) { _ in
-                        ZStack {
-                            starBackground
-                            starBorder
-                                .shadow(color: configuration.shadowColor, radius: configuration.shadowRadius)
-                        }
+                    ForEach((0 ..< configuration.numberOfStars), id: \.self) { index in
+                        starBorder
+                            .shadow(color: configuration.shadowColor, radius: configuration.shadowRadius)
+                            .background(starBackground)
                     }
                 }
                 
-                // Filled stars (partial filling based on rating)
+                // Foreground layer with filled stars
                 HStack(spacing: configuration.spacing) {
-                    ForEach((0..<configuration.numberOfStars), id: \.self) { _ in
+                    ForEach((0 ..< configuration.numberOfStars), id: \.self) { index in
                         starFilling
+                            .mask(Rectangle().size(width: maskWidth, height: geo.size.height))
                             .overlay(starBorder)
                     }
                 }
-                .mask(
-                    Rectangle()
-                        .frame(width: maskWidth, height: geo.size.height)
-                )
+                .mask(Rectangle().size(width: maskWidth, height: geo.size.height))
             }
-            .contentShape(Rectangle()) // Make the entire area tappable
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        updateRatingIfNeeded(
-                            width: geo.size.width,
-                            xLocation: value.location.x
-                        )
-                    }
-            )
+            .padding(.horizontal, horizontalPadding)
+            .contentShape(Rectangle()) // Important for proper hit testing
+            .gesture(dragAndTap)
         }
-        .frame(height: 44) // Provide a reasonable default height for better hit testing
+        // Make sure the view has a sensible height
+        .frame(height: 44) // Add a reasonable default height for better tap targets
     }
 }
 
