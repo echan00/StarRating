@@ -82,23 +82,40 @@ public struct StarRating: View {
         .aspectRatio(contentMode: .fit)
     }
     
-    private func updateRatingFromLocation(width: CGFloat, xLocation: CGFloat) {
+    private func updateRatingIfNeeded(width: CGFloat, xLocation: CGFloat) {
         guard let onRatingChanged = onRatingChanged else { return }
         
-        // Calculate the width of each star including spacing
-        let starWidth = width / CGFloat(configuration.numberOfStars)
+        // Calculate the available space for stars (accounting for spacing)
+        let numberOfSpaces = CGFloat(configuration.numberOfStars - 1)
+        let totalSpacingWidth = configuration.spacing * numberOfSpaces
+        let availableStarWidth = width - totalSpacingWidth
         
-        // Calculate the rating based on the x location
-        let rawRating = (xLocation / width) * CGFloat(configuration.numberOfStars)
-        let cappedRating = max(min(rawRating, CGFloat(configuration.numberOfStars)), 0)
+        // Calculate individual star width
+        let starWidth = availableStarWidth / CGFloat(configuration.numberOfStars)
         
+        // Determine which star was tapped and the percentage within that star
+        var starIndex = 0
+        var remainingX = xLocation
+        
+        // Find which star was tapped
+        while remainingX > starWidth && starIndex < configuration.numberOfStars - 1 {
+            remainingX -= (starWidth + configuration.spacing)
+            starIndex += 1
+        }
+        
+        // Calculate rating based on the position within the star
+        let percentOfStar = min(max(remainingX / starWidth, 0), 1)
+        let newRating = Double(starIndex) + Double(percentOfStar)
+        
+        // Normalize the rating according to configuration
         let normalizedRating = Self.normalizedRating(
-            rating: Double(cappedRating),
+            rating: newRating,
             minRating: configuration.minRating,
             numberOfStars: configuration.numberOfStars,
             stepType: configuration.stepType
         )
         
+        // Only update if the rating changed
         if normalizedRating != rating {
             rating = normalizedRating
             onRatingChanged(rating)
@@ -106,7 +123,20 @@ public struct StarRating: View {
     }
     
     private func ratingWidth(fullWidth: CGFloat) -> CGFloat {
-        return (CGFloat(rating) / CGFloat(configuration.numberOfStars)) * fullWidth
+        // Calculate total width excluding spacing
+        let numberOfSpaces = CGFloat(configuration.numberOfStars - 1)
+        let totalSpacingWidth = configuration.spacing * numberOfSpaces
+        let availableStarWidth = fullWidth - totalSpacingWidth
+        
+        // Calculate width of a single star
+        let starWidth = availableStarWidth / CGFloat(configuration.numberOfStars)
+        
+        // Calculate total width for the current rating
+        let fullStars = floor(CGFloat(rating))
+        let partialStar = CGFloat(rating) - fullStars
+        
+        // Width is: (full stars * (star width + spacing)) + (partial star * star width)
+        return (fullStars * (starWidth + configuration.spacing)) + (partialStar * starWidth)
     }
     
     public var body: some View {
@@ -132,17 +162,16 @@ public struct StarRating: View {
                             .overlay(starBorder)
                     }
                 }
-                .frame(width: geo.size.width, alignment: .leading)
                 .mask(
                     Rectangle()
                         .frame(width: maskWidth, height: geo.size.height)
                 )
             }
-            .contentShape(Rectangle())
+            .contentShape(Rectangle()) // Make the entire area tappable
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
-                        updateRatingFromLocation(
+                        updateRatingIfNeeded(
                             width: geo.size.width,
                             xLocation: value.location.x
                         )
